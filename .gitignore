@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .venv/
+scripts/
+state.json
+state.json.tmp
