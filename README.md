@@ -24,9 +24,21 @@ curl -fsSL https://raw.githubusercontent.com/rival-afk/pycp/main/install.sh | sh
 Что делают скрипты: клонируют (или обновляют) pycp в `%LOCALAPPDATA%\pycp` / `~/.local/share/pycp`,
 ставят зависимости (`pip install -r requirements.txt`, при неудаче — venv) и регистрируют
 MCP-сервер в OpenCode **глобально**. Флаг `--local` (`sh -s -- --local`) или `-Local` регистрирует
-только в текущем проекте. Если `opencode` не найден в PATH — скрипт выведет JSON для ручной вставки.
+только в текущем проекте.
 
-Проверка: `opencode mcp list` → `pycp  connected`.
+Регистрация не зависит от наличия `opencode` в PATH:
+
+1. Если CLI найден — используется `opencode mcp add` (как раньше).
+2. Если CLI нет (например, установлено только десктопное приложение) или `mcp add` завершился
+   ошибкой — инсталлер ищет существующий конфиг и **сам дописывает** `mcp.servers.pycp`, сохраняя
+   комментарии и остальные настройки:
+   - глобально: `~/.config/opencode/opencode.jsonc(.json)`, `%APPDATA%\opencode\opencode.jsonc(.json)`;
+   - `-Local` / `--local`: `./opencode.jsonc(.json)` в текущей папке.
+3. Если подходящего конфига нет — инсталлер печатает JSON для ручной вставки, предупреждение
+   и **завершается с ненулевым кодом** (больше не выглядит успешным, ничего не зарегистрировав).
+
+После установки без CLI перезапустите OpenCode. Проверка (если CLI есть):
+`opencode mcp list` → `pycp  connected`.
 
 ## Как это работает
 

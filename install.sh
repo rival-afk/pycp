@@ -44,29 +44,63 @@ PY_EXE="$("$PY" -c 'import sys; print(sys.executable)')"
 echo "pycp: python: $PY_EXE"
 
 # 4) register in OpenCode
+PYCP_SERVER="$DEST/server.py"
+REGISTERED=0
 if command -v opencode >/dev/null 2>&1; then
     if [ "$LOCAL" = "1" ]; then
         echo "pycp: регистрирую MCP-сервер в OpenCode (проект)..."
         opencode mcp remove pycp >/dev/null 2>&1 || true
-        opencode mcp add pycp -- "$PY_EXE" "$DEST/server.py"
+        if opencode mcp add pycp -- "$PY_EXE" "$PYCP_SERVER"; then REGISTERED=1; fi
     else
         echo "pycp: регистрирую MCP-сервер в OpenCode (глобально)..."
         opencode mcp remove pycp >/dev/null 2>&1 || true
-        opencode mcp add pycp --global -- "$PY_EXE" "$DEST/server.py"
+        if opencode mcp add pycp --global -- "$PY_EXE" "$PYCP_SERVER"; then REGISTERED=1; fi
     fi
-    echo "pycp: готово. Проверка: opencode mcp list  (ожидается 'pycp  connected')"
-else
-    echo "pycp: opencode не найден в PATH. Добавьте в opencode.json вручную:"
+    if [ "$REGISTERED" = "1" ]; then
+        echo "pycp: готово. Проверка: opencode mcp list  (ожидается 'pycp  connected')"
+    else
+        echo "pycp: 'opencode mcp add' завершилось с ошибкой. Пробую записать конфиг напрямую..." >&2
+    fi
+fi
+
+if [ "$REGISTERED" != "1" ]; then
+    # CLI может отсутствовать (например, установлено только десктопное приложение).
+    echo "pycp: ищу конфиг OpenCode, чтобы зарегистрироваться без CLI..."
+    if [ "$LOCAL" = "1" ]; then
+        CONFIG_DIRS="$PWD"
+    else
+        CONFIG_DIRS="${XDG_CONFIG_HOME:-$HOME/.config}/opencode $HOME/.config/opencode"
+    fi
+    MERGE_SCRIPT="$DEST/merge_mcp_config.py"
+    for dir in $CONFIG_DIRS; do
+        for cfg in "$dir/opencode.jsonc" "$dir/opencode.json"; do
+            [ -f "$cfg" ] || continue
+            [ -f "$MERGE_SCRIPT" ] || break 2
+            if "$PY" "$MERGE_SCRIPT" "$cfg" "$PY_EXE" "$PYCP_SERVER" "$DEST"; then
+                REGISTERED=1
+                echo "pycp: готово. Перезапустите OpenCode, чтобы подключить инструменты pycp."
+                break 2
+            fi
+            echo "pycp: не удалось обновить конфиг $cfg" >&2
+        done
+    done
+fi
+
+if [ "$REGISTERED" != "1" ]; then
+    echo "pycp: НЕ зарегистрирован — opencode CLI и подходящий конфиг не найдены (или запись не удалась)." >&2
+    echo "pycp: добавьте в opencode.json(c) вручную:" >&2
     cat <<EOF
 {
   "mcp": {
     "servers": {
       "pycp": {
         "type": "local",
-        "command": ["$PY_EXE", "$DEST/server.py"]
+        "command": ["$PY_EXE", "$PYCP_SERVER"],
+        "cwd": "$DEST"
       }
     }
   }
 }
 EOF
+    exit 1
 fi
