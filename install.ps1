@@ -45,15 +45,27 @@ if (-not $Local) { $addArgs += "--global" }
 $addArgs += @("--", $pyExe, (Join-Path $Dest "server.py"))
 
 $registered = $false
+$savedEap = $ErrorActionPreference
 if (Get-Command opencode -ErrorAction SilentlyContinue) {
     Write-Host "pycp: регистрирую MCP-сервер в OpenCode ($Scope)..."
-    & opencode mcp remove pycp 2>$null | Out-Null   # идемпотентность; ошибку игнорируем
-    & opencode @addArgs
-    if ($LASTEXITCODE -eq 0) {
+    # stderr внешней команды не должен прерывать скрипт при ErrorActionPreference=Stop
+    $ErrorActionPreference = 'Continue'
+    try {
+        & opencode mcp remove pycp 2>$null | Out-Null   # идемпотентность; ошибку игнорируем
+        $addOutput = & opencode @addArgs 2>&1 | Out-String
+        $addCode = $LASTEXITCODE
+    } catch {
+        $addCode = 1
+        $addOutput = $_.Exception.Message
+    } finally {
+        $ErrorActionPreference = $savedEap
+    }
+    if ($addCode -eq 0) {
         $registered = $true
         Write-Host "pycp: готово. Проверка: opencode mcp list  (ожидается 'pycp  connected')"
     } else {
-        Write-Warning "pycp: 'opencode mcp add' завершилось с кодом $LASTEXITCODE. Пробую записать конфиг напрямую..."
+        Write-Warning "pycp: 'opencode mcp add' завершилось с кодом $addCode. Пробую записать конфиг напрямую..."
+        if ($addOutput.Trim()) { Write-Warning $addOutput.Trim() }
     }
 }
 
@@ -77,13 +89,23 @@ if (-not $registered) {
     foreach ($cfg in $configPaths) {
         if (-not (Test-Path $cfg)) { continue }
         if (-not (Test-Path $mergeScript)) { break }
-        & $py $mergeScript $cfg $pyExe (Join-Path $Dest "server.py") $Dest
-        if ($LASTEXITCODE -eq 0) {
+        $ErrorActionPreference = 'Continue'
+        try {
+            $mergeOutput = & $py $mergeScript $cfg $pyExe (Join-Path $Dest "server.py") $Dest 2>&1 | Out-String
+            $mergeCode = $LASTEXITCODE
+        } catch {
+            $mergeCode = 1
+            $mergeOutput = $_.Exception.Message
+        } finally {
+            $ErrorActionPreference = $savedEap
+        }
+        if ($mergeCode -eq 0) {
             $registered = $true
             Write-Host "pycp: готово. Перезапустите OpenCode, чтобы подключить инструменты pycp."
             break
         }
         Write-Warning "pycp: не удалось обновить конфиг $cfg"
+        if ($mergeOutput.Trim()) { Write-Warning $mergeOutput.Trim() }
     }
 }
 
